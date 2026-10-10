@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カルドセプト ビギンズ マップアノテーター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; overflow: hidden; }
+        #canvas-container {
+            position: relative;
+            overflow: auto;
+            width: 100%;
+            height: calc(100vh - 120px); /* Adjust based on toolbar height */
+            background-color: #fff;
+            border: 1px solid #d1d5db;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+            cursor: crosshair;
+        }
+        #main-canvas, #interaction-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: top left;
+        }
+        
+        .toolbar {
+            background: linear-gradient(to right, #1f2937, #374151);
+        }
+        .tool-btn {
+            transition: all 0.2s;
+        }
+        .tool-btn.active {
+            background-color: #3b82f6;
+            color: white;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+            border-color: #60a5fa;
+        }
+        
+        /* Color Pickers Custom Styling */
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            padding: 0;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        .floating-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen text-gray-800">
+
+    <header class="toolbar text-white p-3 flex flex-wrap items-center justify-between shadow-md z-10 relative">
+        <div class="flex items-center space-x-4 mb-2 sm:mb-0">
+            <h1 class="text-xl font-bold tracking-wider">Culdcept Map Tool</h1>
+            
+            <div class="flex bg-gray-800 rounded-lg p-1 space-x-1">
+                <button id="tool-select" class="tool-btn active px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-700 focus:outline-none" onclick="setTool('select')">
+                    👆 選択/移動
+                </button>
+                <button id="tool-player" class="tool-btn px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-700 focus:outline-none" onclick="setTool('player')">
+                    👤 プレイヤー
+                </button>
+                <button id="tool-creature" class="tool-btn px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-700 focus:outline-none" onclick="setTool('creature')">
+                    👹 クリーチャー
+                </button>
+                <button id="tool-arrow" class="tool-btn px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-700 focus:outline-none" onclick="setTool('arrow')">
+                    ↗️ 矢印
+                </button>
+                <button id="tool-text" class="tool-btn px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-700 focus:outline-none" onclick="setTool('text')">
+                    🔤 テキスト
+                </button>
+                <button id="tool-marker" class="tool-btn px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-700 focus:outline-none" onclick="setTool('marker')">
+                    📍 目印
+                </button>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <div id="marker-palette" class="flex items-center space-x-1 bg-gray-800 px-2 py-1.5 rounded-lg border border-gray-600 hidden">
+                <span class="text-sm text-gray-300">形:</span>
+                <button class="w-7 h-7 rounded bg-gray-700 text-white border-2 border-white focus:outline-none flex items-center justify-center marker-btn" onclick="setMarkerShape('circle', this)">●</button>
+                <button class="w-7 h-7 rounded bg-gray-700 text-white border-2 border-transparent hover:border-gray-400 focus:outline-none flex items-center justify-center marker-btn" onclick="setMarkerShape('triangle', this)">▲</button>
+                <button class="w-7 h-7 rounded bg-gray-700 text-white border-2 border-transparent hover:border-gray-400 focus:outline-none flex items-center justify-center marker-btn" onclick="setMarkerShape('square', this)">■</button>
+                <button class="w-7 h-7 rounded bg-gray-700 text-white border-2 border-transparent hover:border-gray-400 focus:outline-none flex items-center justify-center marker-btn" onclick="setMarkerShape('diamond', this)">◆</button>
+                <button class="w-7 h-7 rounded bg-gray-700 text-white border-2 border-transparent hover:border-gray-400 focus:outline-none flex items-center justify-center marker-btn" onclick="setMarkerShape('star', this)">★</button>
+            </div>
+            
+            <div id="color-palette" class="flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-600 hidden">
+                <span class="text-sm text-gray-300">色:</span>
+                <button class="w-6 h-6 rounded-full bg-red-500 border-2 border-transparent hover:border-white focus:outline-none focus:border-white ring-2 ring-transparent ring-offset-1 ring-offset-gray-800 active-color-btn" onclick="setColor('red', this)"></button>
+                <button class="w-6 h-6 rounded-full bg-blue-500 border-2 border-transparent hover:border-white focus:outline-none focus:border-white" onclick="setColor('blue', this)"></button>
+                <button class="w-6 h-6 rounded-full bg-yellow-400 border-2 border-transparent hover:border-white focus:outline-none focus:border-white" onclick="setColor('yellow', this)"></button>
+                <button class="w-6 h-6 rounded-full bg-green-500 border-2 border-transparent hover:border-white focus:outline-none focus:border-white" onclick="setColor('green', this)"></button>
+                <button class="w-6 h-6 rounded-full bg-black border-2 border-transparent hover:border-white focus:outline-none focus:border-white" onclick="setColor('black', this)"></button>
+                <button class="w-6 h-6 rounded-full bg-white border-2 border-gray-300 hover:border-blue-500 focus:outline-none focus:border-blue-500" onclick="setColor('white', this)"></button>
+            </div>
+            
+            <button onclick="undo()" class="bg-gray-600 hover:bg-gray-500 text-white px-3 py-1.5 rounded-md text-sm font-medium transition flex items-center shadow" title="1手戻す (Ctrl+Z)">
+                ↩️ 戻す
+            </button>
+            <button onclick="clearAll()" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-md text-sm font-medium transition flex items-center shadow" title="すべて消去">
+                🗑️ クリア
+            </button>
+        </div>
+    </header>
+
+    <div class="bg-gray-200 border-b border-gray-300 p-2 flex items-center justify-between text-sm z-10 relative">
+        <div class="flex items-center space-x-2">
+            <!-- URL input removed, made Local File Upload primary -->
+            <label class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-1.5 rounded cursor-pointer transition shadow flex items-center">
+                📁 ローカルマップ画像を選択
+                <input type="file" id="map-upload" accept="image/*" class="hidden" onchange="loadLocalMap(event)">
+            </label>
+        </div>
+        
+        <div class="flex items-center space-x-4">
+             <label class="flex items-center space-x-2 cursor-pointer">
+                 <input type="checkbox" id="show-grid-toggle" onchange="render()" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300">
+                 <span class="text-gray-700 font-medium">アイソメトリックグリッド</span>
+             </label>
+             <div class="flex items-center space-x-1">
+                 <label class="text-gray-600">幅:</label>
+                 <input type="number" id="grid-size" value="64" min="10" max="200" class="border rounded px-2 py-1 w-16 text-center" onchange="updateGridSize()">
+                 <span class="text-gray-500">px</span>
+             </div>
+        </div>
+    </div>
+
+    <main id="canvas-container">
+        <div class="floating-controls flex flex-col space-y-2">
+            <button onclick="zoom(0.1)" class="bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 w-8 h-8 rounded flex items-center justify-center font-bold shadow">+</button>
+            <button onclick="resetZoom()" class="bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 w-8 h-8 rounded flex items-center justify-center text-xs shadow">100%</button>
+            <button onclick="zoom(-0.1)" class="bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 w-8 h-8 rounded flex items-center justify-center font-bold shadow">-</button>
+        </div>
+        
+        <!-- Main canvas for drawing objects -->
+        <canvas id="main-canvas"></canvas>
+        <!-- Interaction layer for handling mouse events during drawing (like arrow drag) -->
+        <canvas id="interaction-layer"></canvas>
+    </main>
+    
+    <!-- Input for Text Tool -->
+    <div id="text-input-container" class="hidden absolute z-50">
+        <input type="text" id="text-input" class="border-2 border-blue-500 rounded px-1 text-sm bg-white shadow-lg outline-none" placeholder="テキスト入力...">
+    </div>
+
+        <script>
+        // State variables
+        let currentTool = 'select';
+        let currentColor = '#ef4444'; // default red
+        let currentMarkerShape = 'circle';
+        let gridSize = 40;
+        let scale = 1.0;
+        
+        let mapImage = new Image();
+        let objects = []; // Stores all placed items (icons, arrows, text)
+        let history = []; // For undo functionality
+        
+        // Canvas Setup
+        const container = document.getElementById('canvas-container');
+        const canvas = document.getElementById('main-canvas');
+        const ctx = canvas.getContext('2d');
+        const iLayer = document.getElementById('interaction-layer');
+        const iCtx = iLayer.getContext('2d');
+        
+        // Interaction state
+        let isDrawing = false;
+        let selectedObject = null;
+        let isDragging = false;
+        let lastDragPos = {x: 0, y: 0};
+        
+        // Arrow Multi-segment state
+        let currentArrowPoints = [];
+        let longPressTimer = null;
+        let lastMousePos = {x: 0, y: 0};
+        
+        // Text Input Elements
+        const textInputContainer = document.getElementById('text-input-container');
+        const textInput = document.getElementById('text-input');
+        let pendingTextPos = {x:0, y:0};
+
+        const colors = {
+            'red': '#ef4444',
+            'blue': '#3b82f6',
+            'yellow': '#eab308',
+            'green': '#22c55e',
+            'black': '#000000',
+            'white': '#ffffff'
+        };
+
+        function setTool(tool) {
+            currentTool = tool;
+            
+            // Update UI
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tool-${tool}`).classList.add('active');
+            
+            // Show/Hide palettes based on tool
+            const colorPalette = document.getElementById('color-palette');
+            const markerPalette = document.getElementById('marker-palette');
+            
+            if (['player', 'creature', 'arrow', 'text', 'marker'].includes(tool)) {
+                colorPalette.classList.remove('hidden');
+            } else {
+                colorPalette.classList.add('hidden');
+            }
+            
+            if (tool === 'marker') {
+                markerPalette.classList.remove('hidden');
+            } else {
+                markerPalette.classList.add('hidden');
+            }
+            
+            // Change cursor
+            container.style.cursor = tool === 'select' ? 'default' : 
+                                     (tool === 'text' ? 'text' : 
+                                     (tool === 'arrow' ? 'crosshair' : 'crosshair'));
+            
+            // Cancel any ongoing arrow drawing if tool changes
+            if (currentArrowPoints) {
+                finishArrowDrawing();
+            }
+                                     
+            hideTextInput();
+            render();
+        }
+
+        function setMarkerShape(shape, btnElem) {
+            currentMarkerShape = shape;
+            
+            // Update UI
+            document.querySelectorAll('.marker-btn').forEach(btn => {
+                btn.style.borderColor = 'transparent';
+            });
+            btnElem.style.borderColor = 'white';
+            
+            if (selectedObject && selectedObject.type === 'marker' && currentTool === 'select') {
+                saveState();
+                selectedObject.shape = shape;
+                render();
+            }
+        }
+
+        function setColor(colorName, btnElem) {
+            currentColor = colors[colorName];
+            
+            // Update UI
+            document.querySelectorAll('#color-palette button').forEach(btn => {
+                btn.style.borderColor = 'transparent';
+                btn.classList.remove('ring-white');
+            });
+            btnElem.style.borderColor = 'white';
+            
+            // If an object is selected, change its color
+            if (selectedObject && currentTool === 'select') {
+                saveState();
+                selectedObject.color = currentColor;
+                render();
+            }
+        }
+
+        function updateGridSize() {
+            const val = parseInt(document.getElementById('grid-size').value);
+            if (!isNaN(val) && val > 0) {
+                gridSize = val;
+                objects.forEach(obj => {
+                    if (obj.type === 'player' || obj.type === 'creature' || obj.type === 'marker') {
+                        // Keep size relative to grid size setting for scaling
+                        obj.size = gridSize * 1.2;
+                    }
+                });
+                render();
+            }
+        }
+
+        // Snap coordinate to grid - NO LONGER USED FOR MOVEMENT, kept for reference or future grid-snap toggle if needed
+        function snapToGrid(val) {
+            return Math.round(val / gridSize) * gridSize;
+        }
+
+        function loadLocalMap(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    loadImage(e.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function loadImage(src) {
+            mapImage.onload = () => {
+                canvas.width = mapImage.width;
+                canvas.height = mapImage.height;
+                iLayer.width = mapImage.width;
+                iLayer.height = mapImage.height;
+                
+                // Clear existing objects on new map load
+                objects = [];
+                history = [];
+                resetZoom();
+                render();
+            };
+            mapImage.src = src;
+        }
+
+        function zoom(delta) {
+            scale += delta;
+            if (scale < 0.2) scale = 0.2;
+            if (scale > 3.0) scale = 3.0;
+            applyTransform();
+        }
+
+        function resetZoom() {
+            scale = 1.0;
+            applyTransform();
+        }
+
+        function applyTransform() {
+            canvas.style.transform = `scale(${scale})`;
+            iLayer.style.transform = `scale(${scale})`;
+        }
+
+        function saveState() {
+            // Deep copy objects
+            const state = JSON.stringify(objects);
+            history.push(state);
+            if (history.length > 20) history.shift(); // Keep last 20 states
+        }
+
+        function undo() {
+            if (history.length > 0) {
+                const prevState = history.pop();
+                objects = JSON.parse(prevState);
+                render();
+                iCtx.clearRect(0, 0, iLayer.width, iLayer.height);
+            }
+        }
+
+        function clearAll() {
+            if (objects.length === 0) return;
+            saveState();
+            objects = [];
+            render();
+            iCtx.clearRect(0, 0, iLayer.width, iLayer.height);
+        }
+
+        // Keyboard shortcut for Undo and Delete
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'z') {
+                undo();
+            } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObject && currentTool === 'select') {
+                // テキスト入力中ではない場合のみ削除
+                if (document.activeElement !== textInput) {
+                    saveState();
+                    const index = objects.indexOf(selectedObject);
+                    if (index > -1) {
+                        objects.splice(index, 1);
+                    }
+                    selectedObject = null;
+                    render();
+                }
+            }
+        });
+
+        function getMousePos(evt) {
+            const rect = iLayer.getBoundingClientRect();
+            return {
+                x: (evt.clientX - rect.left) / scale,
+                y: (evt.clientY - rect.top) / scale
+            };
+        }
+
+        // 矢印の確定処理
+        function finishArrow(finalPos) {
+            clearTimeout(longPressTimer);
+            if (!isDrawing) return;
+
+            if (finalPos) {
+                // 最後の点と近すぎない場合のみ追加（ダブルクリック重複などを防止）
+                const lastP = currentArrowPoints[currentArrowPoints.length - 1];
+                if (!lastP || Math.hypot(finalPos.x - lastP.x, finalPos.y - lastP.y) > 5) {
+                    currentArrowPoints.push({x: finalPos.x, y: finalPos.y});
+                }
+            }
+
+            if (currentArrowPoints.length > 1) {
+                saveState();
+                objects.push({
+                    type: 'arrow',
+                    points: [...currentArrowPoints],
+                    color: currentColor
+                });
+            }
+            
+            isDrawing = false;
+            currentArrowPoints = [];
+            iCtx.clearRect(0, 0, iLayer.width, iLayer.height);
+            render();
+            setTool('select');
+        }
+
+        // 右クリックメニューの無効化と右クリックでの矢印確定
+        iLayer.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            if (currentTool === 'arrow' && isDrawing) {
+                finishArrow(getMousePos(e));
+            }
+        });
+
+        iLayer.addEventListener('mousedown', (e) => {
+            const pos = getMousePos(e);
+            
+            if (currentTool === 'select') {
+                // Find clicked object (reverse order for top-most)
+                selectedObject = null;
+                for (let i = objects.length - 1; i >= 0; i--) {
+                    if (isHit(pos, objects[i])) {
+                        selectedObject = objects[i];
+                        isDragging = true;
+                        
+                        lastDragPos = {x: pos.x, y: pos.y};
+                        
+                        // Bring to front
+                        objects.splice(i, 1);
+                        objects.push(selectedObject);
+                        
+                        render();
+                        break;
+                    }
+                }
+                if (!selectedObject) render(); // Deselect
+                return;
+            }
+
+            if (currentTool === 'player' || currentTool === 'creature' || currentTool === 'marker') {
+                saveState();
+                objects.push({
+                    type: currentTool,
+                    x: pos.x, // Free placement
+                    y: pos.y, // Free placement
+                    color: currentColor,
+                    shape: currentTool === 'marker' ? currentMarkerShape : undefined,
+                    size: gridSize * 1.2 
+                });
+                render();
+                setTool('select'); // Automatically switch to select tool for adjustment
+            }
+            
+            if (currentTool === 'arrow') {
+                if (e.button === 2) return; // 右クリックはcontextmenuで処理
+
+                if (!isDrawing) {
+                    isDrawing = true;
+                    currentArrowPoints = [{x: pos.x, y: pos.y}];
+                } else {
+                    currentArrowPoints.push({x: pos.x, y: pos.y});
+                }
+                
+                // 長押しタイマー（500ms押したままで確定）
+                longPressTimer = setTimeout(() => {
+                    if (isDrawing) {
+                        finishArrow(lastMousePos);
+                    }
+                }, 500);
+            }
+            
+            if (currentTool === 'text') {
+                if (textInputContainer.classList.contains('hidden')) {
+                    pendingTextPos = { x: pos.x, y: pos.y };
+                    showTextInput(e.clientX, e.clientY);
+                } else {
+                    commitText();
+                }
+            }
+        });
+
+        iLayer.addEventListener('mousemove', (e) => {
+            const pos = getMousePos(e);
+            if (currentTool === 'text') {
+                if (textInputContainer.classList.contains('hidden')) {
+                    pendingTextPos = { x: pos.x, y: pos.y };
+                    showTextInput(e.clientX, e.clientY);
+                } else {
+                    commitText();
+                }
+            }
+        });
+
+        iLayer.addEventListener('mousemove', (e) => {
+            const pos = getMousePos(e);
+            lastMousePos = pos;
+            
+            if (isDragging && selectedObject) {
+                const dx = pos.x - lastDragPos.x;
+                const dy = pos.y - lastDragPos.y;
+                
+                if (selectedObject.type === 'arrow') {
+                    const points = selectedObject.points || [{x: selectedObject.x, y: selectedObject.y}, {x: selectedObject.ex, y: selectedObject.ey}];
+                    if (!selectedObject.points) selectedObject.points = points; // 後方互換変換
+                    
+                    points.forEach(p => {
+                        p.x += dx;
+                        p.y += dy;
+                    });
+                } else {
+                    selectedObject.x += dx;
+                    selectedObject.y += dy;
+                }
+                
+                lastDragPos = pos;
+                render();
+            }
+            
+            if (isDrawing && currentTool === 'arrow' && currentArrowPoints.length > 0) {
+                // Clear and redraw interaction layer for real-time arrow drawing
+                iCtx.clearRect(0, 0, iLayer.width, iLayer.height);
+                
+                // 確定済みの点＋現在のマウス位置をプレビュー描画
+                const previewPoints = [...currentArrowPoints, pos];
+                drawArrowPolyline(iCtx, previewPoints, currentColor);
+                
+                // ガイド表示
+                iCtx.font = "bold 12px sans-serif";
+                iCtx.fillStyle = "black";
+                iCtx.strokeStyle = "white";
+                iCtx.lineWidth = 3;
+                const guideText = "右クリック/長押しで確定";
+                iCtx.strokeText(guideText, pos.x + 15, pos.y + 15);
+                iCtx.fillText(guideText, pos.x + 15, pos.y + 15);
+            }
+        });
+
+        iLayer.addEventListener('mouseup', (e) => {
+            if (currentTool === 'arrow') {
+                clearTimeout(longPressTimer);
+            }
+            
+            if (isDragging) {
+                if (selectedObject) {
+                     saveState(); 
+                }
+                isDragging = false;
+            }
+        });
+
+        function showTextInput(screenX, screenY) {
+            textInputContainer.style.left = screenX + 'px';
+            textInputContainer.style.top = screenY + 'px';
+            textInputContainer.classList.remove('hidden');
+            textInput.value = '';
+            textInput.style.color = currentColor;
+            setTimeout(() => textInput.focus(), 50);
+        }
+
+        function hideTextInput() {
+            textInputContainer.classList.add('hidden');
+            textInput.blur();
+        }
+
+        function commitText() {
+            if (!textInputContainer.classList.contains('hidden') && textInput.value.trim() !== '') {
+                saveState();
+                objects.push({
+                    type: 'text',
+                    x: pendingTextPos.x,
+                    y: pendingTextPos.y,
+                    text: textInput.value,
+                    color: currentColor,
+                    fontSize: 16 // "小さい文字"
+                });
+                setTool('select'); // Automatically switch to select tool for adjustment
+            }
+            hideTextInput();
+            render();
+        }
+        
+        textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                commitText();
+            } else if (e.key === 'Escape') {
+                hideTextInput();
+            }
+        });
+
+        // 線分への距離計算（矢印の当たり判定用）
+        function distToSegment(p, v, w) {
+            const l2 = (w.x - v.x)**2 + (w.y - v.y)**2;
+            if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+            let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+        }
+
+        function isHit(pos, obj) {
+            if (obj.type === 'player' || obj.type === 'creature' || obj.type === 'marker') {
+                // Check bounds based on centered drawing
+                const halfSize = obj.size / 2;
+                return (pos.x >= obj.x - halfSize && pos.x <= obj.x + halfSize &&
+                        pos.y >= obj.y - halfSize && pos.y <= obj.y + halfSize);
+            } else if (obj.type === 'text') {
+                ctx.font = `${obj.fontSize}px sans-serif`;
+                const metrics = ctx.measureText(obj.text);
+                const height = obj.fontSize;
+                return (pos.x >= obj.x && pos.x <= obj.x + metrics.width &&
+                        pos.y >= obj.y - height && pos.y <= obj.y);
+            } else if (obj.type === 'arrow') {
+                const points = obj.points || [{x: obj.x, y: obj.y}, {x: obj.ex, y: obj.ey}];
+                for (let i = 0; i < points.length - 1; i++) {
+                    const d = distToSegment(pos, points[i], points[i+1]);
+                    if (d < 10) return true;
+                }
+            }
+            return false;
+        }
+
+        function render() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw Map Background
+            if (mapImage.src) {
+                ctx.drawImage(mapImage, 0, 0);
+            } else {
+                // Initial prompt message when no map is loaded
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = 'bold 20px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('左上の「📁 ローカルマップ画像を選択」から', canvas.width / 2, canvas.height / 2 - 15);
+                ctx.fillText('お手持ちの画像を読み込んでください', canvas.width / 2, canvas.height / 2 + 15);
+                ctx.textAlign = 'left';
+            }
+            
+            const showGrid = document.getElementById('show-grid-toggle').checked;
+            if (mapImage.src && showGrid) {
+                ctx.strokeStyle = 'rgba(150, 150, 150, 0.5)';
+                ctx.lineWidth = 1;
+                
+                // Draw Isometric Grid (2:1 ratio slope)
+                // Width of a tile is gridSize, height is gridSize / 2
+                const tileW = gridSize;
+                const tileH = gridSize / 2;
+                
+                // Determine bounds based on canvas size
+                const maxW = canvas.width;
+                const maxH = canvas.height;
+                
+                // Draw lines going /
+                for(let x = -maxH * 2; x < maxW + maxH * 2; x += tileW) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x + maxH * 2, maxH);
+                    ctx.stroke();
+                }
+                
+                // Draw lines going \
+                for(let x = -maxH * 2; x < maxW + maxH * 2; x += tileW) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x - maxH * 2, maxH);
+                    ctx.stroke();
+                }
+            }
+
+            // Draw all objects
+            objects.forEach(obj => {
+                if (obj.type === 'player') drawPlayer(ctx, obj);
+                else if (obj.type === 'creature') drawCreature(ctx, obj);
+                else if (obj.type === 'marker') drawMarker(ctx, obj);
+                else if (obj.type === 'arrow') {
+                    const points = obj.points || [{x: obj.x, y: obj.y}, {x: obj.ex, y: obj.ey}];
+                    drawArrowPolyline(ctx, points, obj.color);
+                }
+                else if (obj.type === 'text') drawText(ctx, obj);
+                
+                // Draw selection highlight
+                if (obj === selectedObject) {
+                    drawHighlight(ctx, obj);
+                }
+            });
+        }
+
+        // Custom Drawing Functions
+        function drawPlayer(context, obj) {
+            const hs = obj.size / 2;
+            context.fillStyle = obj.color;
+            context.strokeStyle = 'white';
+            context.lineWidth = 2;
+            
+            // Draw rounded human-like shape
+            
+            // Head
+            context.beginPath();
+            context.arc(obj.x, obj.y - hs*0.35, hs*0.35, 0, Math.PI * 2); 
+            context.fill();
+            context.stroke();
+            
+            // Body (rounded shoulders/base)
+            context.beginPath();
+            context.moveTo(obj.x - hs*0.5, obj.y + hs*0.8); // bottom left
+            // Curve up to shoulder
+            context.quadraticCurveTo(obj.x - hs*0.6, obj.y, obj.x - hs*0.3, obj.y - hs*0.1);
+            // Across neck area
+            context.lineTo(obj.x + hs*0.3, obj.y - hs*0.1);
+            // Curve down to bottom right
+            context.quadraticCurveTo(obj.x + hs*0.6, obj.y, obj.x + hs*0.5, obj.y + hs*0.8);
+            // Close bottom
+            context.quadraticCurveTo(obj.x, obj.y + hs*0.9, obj.x - hs*0.5, obj.y + hs*0.8);
+            context.closePath();
+            
+            context.fill();
+            context.stroke();
+        }
+
+        function drawCreature(context, obj) {
+            const hs = obj.size / 2;
+            context.fillStyle = obj.color;
+            context.strokeStyle = 'black';
+            context.lineWidth = 2;
+            
+            // Draw a diamond/shield shape for creature
+            context.beginPath();
+            context.moveTo(obj.x, obj.y - hs*0.9);
+            context.lineTo(obj.x + hs*0.8, obj.y);
+            context.lineTo(obj.x, obj.y + hs*0.9);
+            context.lineTo(obj.x - hs*0.8, obj.y);
+            context.closePath();
+            context.fill();
+            context.stroke();
+            
+            // Inner mark
+            context.fillStyle = 'white';
+            context.beginPath();
+            context.arc(obj.x, obj.y, hs*0.2, 0, Math.PI*2);
+            context.fill();
+        }
+
+        function drawArrowPolyline(context, points, color, isHighlight = false) {
+            if (!points || points.length < 2) return;
+            
+            context.strokeStyle = color;
+            context.lineWidth = 4;
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            
+            if (isHighlight) {
+                context.strokeStyle = '#00ff00';
+                context.lineWidth = 6;
+                context.setLineDash([5, 5]);
+            } else {
+                // Shadow for visibility on map
+                context.shadowColor = 'rgba(255,255,255,0.7)';
+                context.shadowBlur = 4;
+                context.setLineDash([]);
+            }
+            
+            // Draw line
+            context.beginPath();
+            context.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) {
+                context.lineTo(points[i].x, points[i].y);
+            }
+            context.stroke();
+            
+            if (isHighlight) context.setLineDash([]); // リセット
+            
+            // Draw head
+            const headlen = 25; // 矢尻を大きくした
+            const p1 = points[points.length - 2];
+            const p2 = points[points.length - 1];
+            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            
+            context.beginPath();
+            context.moveTo(p2.x, p2.y);
+            context.lineTo(p2.x - headlen * Math.cos(angle - Math.PI / 6), p2.y - headlen * Math.sin(angle - Math.PI / 6));
+            context.lineTo(p2.x - headlen * Math.cos(angle + Math.PI / 6), p2.y - headlen * Math.sin(angle + Math.PI / 6));
+            context.closePath();
+            
+            if (!isHighlight) {
+                context.fillStyle = color;
+                context.fill();
+                context.stroke();
+                context.shadowBlur = 0; // reset shadow
+            } else {
+                context.stroke();
+            }
+        }
+
+        function drawMarker(context, obj) {
+            const hs = (obj.size / 2) * 0.8; // Slightly smaller than creatures/players
+            context.fillStyle = obj.color;
+            context.strokeStyle = 'white';
+            context.lineWidth = 2;
+            context.lineJoin = 'round';
+            
+            context.beginPath();
+            switch(obj.shape) {
+                case 'circle':
+                    context.arc(obj.x, obj.y, hs, 0, Math.PI*2);
+                    break;
+                case 'triangle':
+                    context.moveTo(obj.x, obj.y - hs);
+                    context.lineTo(obj.x + hs, obj.y + hs*0.8);
+                    context.lineTo(obj.x - hs, obj.y + hs*0.8);
+                    context.closePath();
+                    break;
+                case 'square':
+                    context.rect(obj.x - hs*0.85, obj.y - hs*0.85, hs*1.7, hs*1.7);
+                    break;
+                case 'diamond':
+                    context.moveTo(obj.x, obj.y - hs*1.1);
+                    context.lineTo(obj.x + hs*1.1, obj.y);
+                    context.lineTo(obj.x, obj.y + hs*1.1);
+                    context.lineTo(obj.x - hs*1.1, obj.y);
+                    context.closePath();
+                    break;
+                case 'star':
+                    const spikes = 5;
+                    const outerRadius = hs * 1.1;
+                    const innerRadius = outerRadius / 2.2;
+                    let rot = Math.PI / 2 * 3;
+                    let x = obj.x;
+                    let y = obj.y;
+                    let step = Math.PI / spikes;
+                    
+                    context.moveTo(obj.x, obj.y - outerRadius);
+                    for(let i=0; i<spikes; i++){
+                        x = obj.x + Math.cos(rot) * outerRadius;
+                        y = obj.y + Math.sin(rot) * outerRadius;
+                        context.lineTo(x, y);
+                        rot += step;
+                        
+                        x = obj.x + Math.cos(rot) * innerRadius;
+                        y = obj.y + Math.sin(rot) * innerRadius;
+                        context.lineTo(x, y);
+                        rot += step;
+                    }
+                    context.lineTo(obj.x, obj.y - outerRadius);
+                    context.closePath();
+                    break;
+            }
+            context.fill();
+            context.stroke();
+        }
+
+        function drawText(context, obj) {
+            context.font = `bold ${obj.fontSize}px sans-serif`;
+            context.fillStyle = obj.color;
+            
+            // White outline for readability on noisy background
+            context.strokeStyle = 'white';
+            context.lineWidth = 3;
+            context.lineJoin = 'round';
+            context.strokeText(obj.text, obj.x, obj.y);
+            context.fillText(obj.text, obj.x, obj.y);
+        }
+
+        function drawHighlight(context, obj) {
+            context.strokeStyle = '#00ff00';
+            context.lineWidth = 2;
+            context.setLineDash([5, 5]);
+            
+            if (obj.type === 'player' || obj.type === 'creature' || obj.type === 'marker') {
+                const hs = obj.size / 2 + 4;
+                context.strokeRect(obj.x - hs, obj.y - hs, hs*2, hs*2);
+            } else if (obj.type === 'text') {
+                context.font = `${obj.fontSize}px sans-serif`;
+                const metrics = context.measureText(obj.text);
+                const p = 4; // padding
+                context.strokeRect(obj.x - p, obj.y - obj.fontSize - p, metrics.width + p*2, obj.fontSize + p*2);
+            } else if (obj.type === 'arrow') {
+                const points = obj.points || [{x: obj.x, y: obj.y}, {x: obj.ex, y: obj.ey}];
+                drawArrowPolyline(context, points, obj.color, true);
+            }
+            context.setLineDash([]);
+        }
+
+        // Initialize with default tool setup
+        window.onload = () => {
+            setTool('select');
+            
+            // Set initial canvas size to container size for the prompt message
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            iLayer.width = canvas.width;
+            iLayer.height = canvas.height;
+            
+            render();
+        };
+
+    </script>
+</body>
+</html>
